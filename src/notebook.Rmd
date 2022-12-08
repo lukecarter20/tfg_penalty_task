@@ -1,0 +1,971 @@
+---
+title: "TFG Penalty Task"
+output:
+  rmdformats::downcute:
+    self_contained: true
+    thumbnails: false
+    lightbox: true
+    gallery: false
+    highlight: tango
+---
+
+```{=html}
+<style>
+div.lgrey { background-color:#DEDEDE; border-radius: 5px; padding: 15px;}
+</style>
+```
+```{=html}
+<style>
+div.lblue { background-color:#CADBFB; border-radius: 5px; padding: 15px;}
+</style>
+```
+
+```{r, echo=FALSE}
+
+htmltools::img(src = knitr::image_uri("tfg_logo.png"), 
+               alt = 'logo', 
+               style = 'position:absolute; top:0; right:0; padding:10px; width: 185px; height: 128px')
+```
+
+------------------------------------------------------------------------
+
+# 0.0 - Reading in & exploring the data
+
+<br>
+
+```{r read_and_tidy, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# source required libraries for analysis
+source("00_header.R")
+
+# read in penalty_dataset .csv file
+penalty_df <- read.csv("penalty_dataset.csv")
+
+# tidy and append penalty_df
+penalty_tidy_df <- 
+  penalty_df %>%
+  mutate(
+    is_converted = ifelse(grepl("G", event_type), 1L, 0L), # was the penalty converted
+    is_normal_time = ifelse(half < 3, 1L, 0L), # was it taken in normal time
+    is_shootout = ifelse(!is.na(shootout_order), 1L, 0L), # was it taken in a penalty shootout
+    is_home = ifelse(team_id == home_team_id, 1L, 0L), # was it taken by a home-team player
+    current_match_sit = ifelse(
+      is_home == 1L & home_score > away_score, "win",
+      ifelse(
+        is_home == 1L & home_score < away_score, "lose",
+        ifelse(
+          is_home == 0L & home_score < away_score, "win",
+          ifelse(
+            is_home == 0L & home_score > away_score, "lose", "draw"
+          )
+        )
+      )
+    ) # are the team taking the penalty winning, losing or drawing the match
+  )
+
+# show first 5 rows of penalty_tidy_df
+penalty_tidy_df %>%
+  head() %>%
+  kbl(caption = "First 6 rows of tidied penalty dataset") %>%
+  kable_styling()
+
+```
+
+------------------------------------------------------------------------
+
+## 0.1 - Exploring relationships between dataset variables 
+
+<br>
+
+::: lblue
+In this section we are aiming to understand the relationship between the independent variable (penalty conversion) and other potential dependent variables that are agnostic to the key dependent variables targeted in this task (e.g. gender and player). Here are a list of the agnostic dependent variables that appear in the dataset:
+
+- Shootout (vs. normal-time)
+- Extra-time (vs. normal-time)
+- First half (vs. second half)
+- Home team (vs. away team)
+- Other match situation (match time, match score)
+- Quality of opposition (goalkeeper)*
+
+\*these variables are impossible to investigate due to the depth of the dataset in use
+:::
+
+<br>
+
+### 0.1.1 - Penalty shootout vs. normal-time penalty conversion rate
+
+```{r shootout_vs_nt, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# create a new df of only the independent and dependent variables we want to test
+df <- 
+  penalty_tidy_df %>%
+  select(is_shootout, is_converted)
+
+# Fisher's exact test with raw data
+test <- fisher.test(table(df))
+
+# combine plot and statistical test with ggbarstats
+ggbarstats(
+  df, is_converted, is_shootout,
+  results.subtitle = FALSE,
+  subtitle = paste0(
+    "Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  )
+)
+
+```
+
+::: lgrey
+- There is a significantly (p-value = < 0.001) lower probability of scoring a penalty in a shootout compared to a normal-time penalty (72% vs. 81%)
+- It is likely that the majority of the difference seen here is due to lower quality players taking a higher proportion of the penalties 
+- When comparing other discrete dependent variables (e.g. mens vs. womens or player vs. player) it is important to include this difference in shootout vs. normal-time penalty conversion rate
+:::
+
+<br>
+
+### 0.1.2 - Extra-time vs. normal-time penalty conversion rate
+
+```{r et_vs_nt, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# create a new df of only the independent and dependent variables we want to test
+df <- 
+  penalty_tidy_df %>%
+  filter(is_shootout == 0) %>%
+  select(is_normal_time, is_converted)
+
+# Fisher's exact test with raw data
+test <- fisher.test(table(df))
+
+# combine plot and statistical test with ggbarstats
+ggbarstats(
+  df, is_converted, is_normal_time,
+  results.subtitle = F,
+  subtitle = paste0(
+    "Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  )
+)
+
+```
+
+::: lgrey
+- Despite the conversion rate of extra-time penalties being 3% higher compared to normal-time penalties - this difference cannot be said to be significant (p-value = 0.84)
+- This is likely due to the low sample size of the extra-time group
+:::
+
+<br>
+
+### 0.1.3 - First-half vs. second-half penalty conversion rate
+
+```{r fh_vs_sh, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# create a new df of only the independent and dependent variables we want to test
+df <- 
+  penalty_tidy_df %>%
+  filter(half < 3) %>%
+  select(half, is_converted)
+
+# Fisher's exact test with raw data
+test <- fisher.test(table(df))
+
+# combine plot and statistical test with ggbarstats
+ggbarstats(
+  df, is_converted, half,
+  results.subtitle = F,
+  subtitle = paste0(
+    "Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  )
+)
+
+```
+
+::: lgrey
+- There is no significant difference (p-value = 0.93) in penalty conversion rate between the first and second halves of matches - in fact the conversion rate seems to be almost identical
+:::
+
+<br>
+
+### 0.1.4 - Home-team vs. away-team penalty conversion rate
+
+```{r home_vs_away, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# create a new df of only the independent and dependent variables we want to test
+df <- 
+  penalty_tidy_df %>%
+  filter(is_shootout == 0) %>% # removing significant dependent variables
+  select(is_home, is_converted)
+
+# Fisher's exact test with raw data
+test <- fisher.test(table(df))
+
+# combine plot and statistical test with ggbarstats
+ggbarstats(
+  df, is_converted, is_home,
+  results.subtitle = F,
+  subtitle = paste0(
+    "Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  )
+)
+
+```
+
+::: lgrey
+- Home-team players have a ~2% better likelihood of converting penalties compared to away-team players
+- This difference is statisically significant with a p-value of 0.006
+:::
+
+<br>
+
+### 0.1.5 - Match situation (match time)
+
+```{r match_sit_time, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+#fit logistic regression model
+model <- 
+  penalty_tidy_df %>%
+  filter(is_normal_time == 1) %>%
+  glm(is_converted~time,family="binomial", data = .)
+
+pscl::pR2(model)["McFadden"]
+
+# plot logistic regression over raw data 
+penalty_tidy_df %>%
+  filter(is_normal_time == 1) %>%
+  ggplot(., aes(time, is_converted))+
+  geom_point()+
+  stat_smooth(method="glm", color=colors_tfg$blue, lwd = 2, se=FALSE, method.args = list(family=binomial))+
+  theme_tfg()
+
+```
+
+::: lgrey
+- When fitting the raw penalty data to a logistic regression it is clear that there is little to no predictive power to be gained from using match time as a dependent variable 
+- [McFadden's pseudo-R^2](https://thestatsgeek.com/2014/02/08/r-squared-in-logistic-regression/#:~:text=McFadden's%20pseudo%2DR%20squared&text=denotes%20the%20corresponding%20value%20but,an%20intercept%20and%20no%20covariates.) metric of almost 0 highlights to us that the logistic model used does not fit the data well and therefore highlights a low correlation between variables 
+:::
+
+<br>
+
+### 0.1.6 - Match situation (match score)
+
+```{r match_sit_score, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# calculate sample size & success/failure rate of penalties taken by winning, losing and drawing teams
+penalty_conversion_by_match_sit <- 
+  penalty_tidy_df %>%
+  filter(is_shootout == 0) %>% # removing significant dependent variables
+  distinct() %>%
+  group_by(current_match_sit) %>%
+  summarise(
+    trials = n(),
+    successes = sum(is_converted),
+    success_perc = mean(is_converted)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    failures = trials-successes,
+    failure_perc = failures/trials
+  )
+
+penalty_conversion_by_match_sit %>%
+  kbl(caption = "Penalty conversion rates by current match score") %>%
+  kable_styling()
+
+# create a new df of only the independent and dependent variables we want to test
+df <- 
+  penalty_tidy_df %>%
+  filter(is_shootout == 0, current_match_sit %in% c("win", "lose")) %>%
+  select(current_match_sit, is_converted)
+
+# Fisher's exact test with raw data
+test <- fisher.test(table(df))
+
+# combine plot and statistical test with ggbarstats
+ggbarstats(
+  df, is_converted, current_match_sit,
+  results.subtitle = F,
+  subtitle = paste0(
+    "Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  )
+)
+
+```
+
+::: lgrey
+- There is no significance difference seen in penalty conversion rates with changes in current match score (i.e. winning, losing and drawing), with a p-value of 0.24 between penalties taken when a team is winning or losing
+:::
+
+<br>
+
+::: lblue
+It is clear from the above analysis that the only agnostic dependent variables that exist in the dataset are:
+
+- Shootout (vs. normal-time); with a difference of ~9%
+- Home team (vs. away team); with a difference of ~2%
+:::
+
+
+------------------------------------------------------------------------
+
+# 1.0 - Is there a difference in penalty conversion rates between men and women?
+
+<br>
+
+::: lblue
+Answer: Yes, both with and without adjusting for other agnostic dependent variables which may influence penalty conversion rates, women have a significantly higher penalty conversion rate. On average this is ~3% higher than the penalty conversion rate of men.
+
+The sections below outline how I have come to this conclusion
+:::
+
+## 1.1 - Comparing men's and women's penalty conversion rates
+
+<br>
+
+```{r mens_v_womens_raw, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# calculate sample size & success/failure rate of mens and womens penalties
+penalty_conversion_by_gender <- 
+  penalty_tidy_df %>%
+  distinct() %>% # ensure no duplicated data is present
+  group_by(gender) %>%
+  summarise(
+    trials = n(), # count total number of penalties
+    successes = sum(is_converted), # count number of successful penalties
+    success_perc = mean(is_converted) # calculate % of successful penalties
+  ) %>%
+  ungroup() %>%
+  mutate(
+    failures = trials-successes, # count number of failed penalty attempts
+    failure_perc = failures/trials # calculate % of failed penalty attempts
+  )
+
+penalty_conversion_by_gender %>%
+  kbl(caption = "Penalty success rate by gender") %>%
+  kable_styling()
+
+```
+
+::: lgrey
+-   Looking at the raw outputs, women have a higher success rate than men for peanlty kicks (~83% for women and ~80% for men)
+:::
+
+<br>
+
+## 1.2 - The statistical significance of the difference
+
+<br>
+
+```{r mens_v_womens_raw_signif, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# create a new df of only the independent and dependent variables we want to test
+df <- 
+  penalty_tidy_df %>%
+  select(gender, is_converted)
+
+# Fisher's exact test with raw data
+test <- fisher.test(table(df))
+
+# combine plot and statistical test with ggbarstats
+ggbarstats(
+  df, is_converted, gender,
+  results.subtitle = FALSE,
+  subtitle = paste0(
+    "Fisher's exact test", ", p-value = ",
+    ifelse(test$p.value < 0.001, "< 0.001", round(test$p.value, 3))
+  )
+)
+
+```
+
+::: lgrey
+-   When comparing the success rate of mens and womens penalties using *[Fisher's exact test](https://statsandr.com/blog/fisher-s-exact-test-in-r-independence-test-for-a-small-sample/) we see a significant difference between the two values with a p-value of 0.002
+
+
+\*I have chosen to use the Fisher's exact test because we have two nominal variables and we want to know whether the proportions for one variable are different among values of the other variable. A chi-squared test of independence could also be used but has less application within R
+:::
+
+<br>
+
+## 1.3 - Adjusting for agnostic dependent variables 
+
+<br>
+
+```{r mens_v_womens_adj, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+is_shootout_adj <- 
+  penalty_tidy_df %>%
+  distinct() %>%
+  group_by(is_shootout) %>%
+  summarise(
+    is_converted_avg = mean(is_converted)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    is_shootout_adj = is_converted_avg[is_shootout == 0]-is_converted_avg
+  ) %>%
+  filter(is_shootout == 1) %>%
+  pull(is_shootout_adj)
+
+is_home_adj <- 
+  penalty_tidy_df %>%
+  distinct() %>%
+  group_by(is_home) %>%
+  summarise(
+    is_converted_avg = mean(is_converted)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    is_home_adj = is_converted_avg[is_home == 0]-is_converted_avg
+  ) %>%
+  filter(is_home == 1) %>%
+  pull(is_home_adj)
+
+# calculate sample size & success/failure rate of mens and womens penalties
+penalty_conversion_by_gender_adj <- 
+  penalty_tidy_df %>%
+  distinct() %>% # ensure no duplicated data is present
+  mutate(
+    is_shootout_adj = ifelse(is_shootout == 1, is_shootout_adj, 0),
+    is_home_adj = ifelse(is_home == 1, is_home_adj, 0),
+    is_converted_adj = is_converted+is_shootout_adj+is_home_adj
+  ) %>%
+  group_by(gender) %>%
+  summarise(
+    trials = n(), # count total number of penalties
+    successes = sum(is_converted_adj), # count number of successful penalties
+    success_perc = mean(is_converted_adj) # calculate % of successful penalties
+  ) %>%
+  ungroup() %>%
+  mutate(
+    failures = trials-successes, # count number of failed penalty attempts
+    failure_perc = failures/trials # calculate % of failed penalty attempts
+  )
+
+penalty_conversion_by_gender_adj %>%
+  kbl(caption = "Penalty success rate by gender (adjusted for shootout and home/away bias')") %>%
+  kable_styling()
+
+# evaluate the significance of the difference with the wilcox test 
+penalty_tidy_df %>%
+  distinct() %>% # ensure no duplicated data is present
+  mutate(
+    is_shootout_adj = ifelse(is_shootout == 1, is_shootout_adj, 0),
+    is_home_adj = ifelse(is_home == 1, is_home_adj, 0),
+    is_converted_adj = is_converted+is_shootout_adj+is_home_adj
+  ) %>%
+  wilcox.test(
+    is_converted_adj ~ gender,
+    alternative = "less",
+    data = .,
+  )
+
+```
+
+::: lgrey
+- After adjusting the penalty conversion rates by the bias' seen for both penalty shootouts and
+home/away teams - we still see a difference in mens and womens penalty conversion rates of ~3% (same as the non-adjusted rates)
+- After performing a *[Wilcoxon test](https://statsandr.com/blog/wilcoxon-test-in-r-how-to-compare-2-groups-under-the-non-normality-assumption/) we can also conclude that this difference in conversion rates between men and women is significant with a p-value of < 0.001
+
+\*I have chosen to use the Wilcoxon test here because we have two variables of non-normal distribution with an independent variables that is continuous (this causes issues with the Fisher's exact test as used earlier)
+:::
+
+<br>
+
+------------------------------------------------------------------------
+
+# 2.0 - Who are the best five penalty takers in the dataset?
+
+<br>
+
+::: lblue
+Answer: 
+
+1. Giampaolo Pazzini 
+2. Maximilian Kruse
+3. Cristhian Stuani
+4. Fabinho
+5. Nenê
+
+The sections below outline how I have come to this conclusion
+:::
+
+## 2.1 - Calculating penalty conversion rates for players
+
+<br>
+
+```{r player_ranking_raw, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# calculate penalty conversion SD for population to be used estimate uncertainty of each player's penalty conversion rates
+population_uncertainty_constant <- 
+  penalty_tidy_df %>%
+  distinct() %>%
+  summarise(
+    success_sd = sd(is_converted)
+  ) %>%
+  pull(success_sd)
+
+# set uncertainty limit to 10%
+uncertainty_limit <- 0.1 
+
+# estimated sample size (trials) limit based on uncertainty_limit
+est_sample_size <- (population_uncertainty_constant/uncertainty_limit)^2
+
+# calculate sample size & success/failure rate of players
+penalty_conversion_by_player <- 
+  penalty_tidy_df %>%
+  distinct() %>% # ensure no duplicated data is present
+  group_by(gender, player_id, player) %>%
+  summarise(
+    trials = n(), # count total number of penalties
+    successes = sum(is_converted), # count number of successful penalties
+    success_perc = mean(is_converted), # calculate % of successful penalties
+  ) %>%
+  ungroup() %>%
+  mutate(
+    failures = trials-successes, # count number of failed penalty attempts
+    failure_perc = failures/trials, # calculate % of failed penalty attempts
+    est_uncertainty = population_uncertainty_constant/sqrt(trials) # estimate uncertainty of penalty conversion rate
+  ) %>%
+  filter(trials > est_sample_size) %>% # filter to players with sample size > est_sample_size
+  mutate(
+    rank_success_perc = rank(desc(success_perc), ties.method = 'min') # create ranking for penalty conversion rate
+  )
+
+# display the top 5 players according to penalty conversion rate
+penalty_conversion_by_player %>%
+  filter(rank_success_perc < 6) %>% # filter to top 5 players for penalty conversion rates
+  select(gender, player_id, player, trials, successes, success_perc, rank_success_perc) %>%
+  arrange(rank_success_perc) %>%
+  kbl(caption = "Penalty success rate by player (top 5)") %>%
+  kable_styling()
+
+```
+
+::: lgrey
+- Giampaolo Pazzini leads the way in terms of penalty conversion rate. Of the 27 penalties that he has taken, he has scored 26 (conversion rate of 96.2%)
+- To get inside the top 5, a player needs to have a penalty conversion rate of greater than 95%
+- For more context here are the conversion rates for other ranking milestones (top 10 = 94.4%, top 20 = 90.6%, top 50 = 87.0%, top 100 = 81.3%)
+:::
+
+<br> 
+
+
+## 2.2 - Adjusting for agnostic dependent variables 
+
+<br>
+
+```{r player_ranking__adj, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# calculate adjustment needed for shootout penalties
+is_shootout_adj <- 
+  penalty_tidy_df %>%
+  distinct() %>%
+  group_by(is_shootout) %>%
+  summarise(
+    is_converted_avg = mean(is_converted)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    is_shootout_adj = is_converted_avg[is_shootout == 0]-is_converted_avg
+  ) %>%
+  filter(is_shootout == 1) %>%
+  pull(is_shootout_adj)
+
+# calculate adjustment needed for home advantage
+is_home_adj <- 
+  penalty_tidy_df %>%
+  distinct() %>%
+  group_by(is_home) %>%
+  summarise(
+    is_converted_avg = mean(is_converted)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    is_home_adj = is_converted_avg[is_home == 0]-is_converted_avg
+  ) %>%
+  filter(is_home == 1) %>%
+  pull(is_home_adj)
+
+# calculate adjustment needed for gender
+is_women_adj <- 
+  penalty_tidy_df %>%
+  distinct() %>%
+  group_by(gender) %>%
+  summarise(
+    is_converted_avg = mean(is_converted)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    gender_adj = is_converted_avg[gender == "men"]-is_converted_avg
+  ) %>%
+  filter(gender == "women") %>%
+  pull(gender_adj)
+
+# calculate penalty conversion SD for population to be used estimate uncertainty of each player's penalty conversion rates
+population_uncertainty_constant <- 
+  penalty_tidy_df %>%
+  distinct() %>%
+  summarise(
+    success_sd = sd(is_converted)
+  ) %>%
+  pull(success_sd)
+
+# set uncertainty limit to 10%
+uncertainty_limit <- 0.1 
+
+# estimated sample size (trials) limit based on uncertainty_limit
+est_sample_size <- (population_uncertainty_constant/uncertainty_limit)^2
+
+# calculate sample size & success/failure rate for players
+penalty_conversion_by_player_adj <- 
+  penalty_tidy_df %>%
+  distinct() %>% # ensure no duplicated data is present
+  mutate(
+    is_shootout_adj = ifelse(is_shootout == 1, is_shootout_adj, 0),
+    is_home_adj = ifelse(is_home == 1, is_home_adj, 0),
+    is_women_adj = ifelse(gender == "women", is_women_adj, 0),
+    is_converted_adj = is_converted+is_shootout_adj+is_home_adj+is_women_adj
+  ) %>%
+  group_by(gender, player_id, player) %>%
+  summarise(
+    trials = n(), # count total number of penalties
+    successes = sum(is_converted), # count number of successful penalties
+    success_perc = mean(is_converted), # calculate % of successful penalties
+    adjusted_success_perc = mean(is_converted_adj) # calculate % of successful penalties
+  ) %>%
+  ungroup() %>%
+  mutate(
+    est_uncertainty = population_uncertainty_constant/sqrt(trials) # estimate uncertainty of penalty conversion rate
+  ) %>%
+  filter(trials > est_sample_size) %>% # filter to players with sample size > est_sample_size
+  mutate(
+    rank_success_perc = rank(desc(success_perc), ties.method = 'min'), # create ranking for penalty conversion rate
+    rank_adjusted_success_perc = rank(desc(adjusted_success_perc), ties.method = 'min') # create ranking for adjusted penalty conversion rate
+  )
+
+# display the top 5 players according to adjusted penalty conversion rate
+penalty_conversion_by_player_adj %>%
+  filter(rank_adjusted_success_perc < 6) %>% # filter to top 5 players for penalty conversion rates
+  select(gender, player_id, player, trials, successes, success_perc, adjusted_success_perc, rank_adjusted_success_perc) %>%
+  arrange(rank_adjusted_success_perc) %>%
+  kbl(caption = "Penalty success rate by player (top 5, adjusted for shootout, home/away and gender bias')") %>%
+  kable_styling()
+
+```
+
+::: lgrey
+- After adjusting the conversion rates per player by bias' seen with shootouts, home teams and gender, Giampaolo Pazzini remains the player with the highest penalty conversion rate at 95.0%
+- To get inside the top 5, a player needs to have a penalty conversion rate of greater than 94%
+- For more context here are the conversion rates for other ranking milestones (top 10 = 93.4%, top 20 = 89.7%, top 50 = 85.8%, top 100 = 80.3%)
+:::
+
+<br>
+
+------------------------------------------------------------------------
+
+# 3.0 - How to advise a team on penalty taker order 
+
+<br>
+
+::: lblue
+My hypothesis for this topic (better players first) is built from the following assumptions...
+
+- The higher the penalty order ~ the lower the probability of taking a penalty
+- Maximizing total penalty conversion probabilities ~ maximizing probability of winning penalty shootout
+:::
+
+::: lblue
+Answer: 
+
+1. Best penalty taker
+2. 3rd best penalty taker
+3. 2nd best penalty taker
+4. 4th best penalty taker
+5. Worst penalty taker
+
+The sections below outline how I have come to this conclusion
+:::
+
+## 3.1 - What is the probability of taking a penalty for each order rank?
+
+<br>
+
+```{r shootout_order_prob, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# create subset dataframe for penalty shootouts 
+shootout_df <- 
+  penalty_tidy_df %>%
+  filter(is_shootout == 1) %>%
+  group_by(match_id, team_id) %>%
+  mutate(
+    team_shootout_order = rank(shootout_order) # calculate shootout penalty order by team
+  ) %>%
+  ungroup()
+
+# calculate the total number of unique matches in df
+shootout_matches <- 
+  shootout_df %>%
+  pull(match_id) %>%
+  unique() %>%
+  length()
+
+# calculate the probability of taking a penalty for every order rank
+shootout_df %>%
+  group_by(shootout_order) %>%
+  summarise(
+    trials = n(), # count total number of penalties
+  ) %>%
+  ungroup() %>%
+  mutate(
+    matches = shootout_matches,
+    taken_probability = trials/matches
+  ) %>%
+  ggplot(., aes(as.factor(shootout_order), taken_probability))+
+  geom_bar(stat = "identity", fill = colors_tfg$blue)+
+  geom_text(aes(label = paste(round(taken_probability*100, 1), "%")), vjust = -1, size = 2)+
+  scale_y_continuous(labels = scales::percent_format(1), limits = c(0, 1.1))+
+  labs(x = "Shootout Penalty Order", y = "Probability of Penalty Taken")+
+  theme_tfg()
+
+# calculate the probability of taking a penalty for every order rank by team
+shootout_df %>%
+  group_by(team_shootout_order) %>%
+  summarise(
+    trials = n(), # count total number of penalties
+  ) %>%
+  ungroup() %>%
+  mutate(
+    matches = shootout_matches*2,
+    taken_probability = trials/matches
+  ) %>%
+  ggplot(., aes(as.factor(team_shootout_order), taken_probability))+
+  geom_bar(stat = "identity", fill = colors_tfg$blue)+
+  geom_text(aes(label = paste(round(taken_probability*100, 1), "%")), vjust = -1, size = 3)+
+  scale_y_continuous(labels = scales::percent_format(1), limits = c(0, 1.1))+
+  labs(x = "Shootout Penalty Order (by Team)", y = "Probability of Penalty Taken")+
+  theme_tfg()
+
+```
+
+::: lgrey
+- As expected and hypothesized, the later that a player is scheduled to take a penalty, the less chance they have of actually taking one
+- The first 3 penalty takers are always guaranteed (100%) to take a penalty
+- The player that is scheduled to take the last (5th) penalty for their team has a 62% chance of actually taking a penalty at all - this is further reduced to 48% if you are the second team to take a penalty
+:::
+
+<br> 
+
+::: lblue
+Logic would suggest that in order to maximize a player's chances of scoring a penalty they should be placed as one of the first 3 penalty takers because it is guaranteed that they will take a penalty. There are a couple of other factors which could impact penalty conversion probabilities but both are difficult to measure with data:
+- The influence of pressure 
+- The influence of seeing a previously missed penalty 
+
+Both of these are psychological factors and are therefore tough to measure with data alone
+:::
+
+<br>
+
+## 3.2 - What is the importance of each penalty?
+
+<br>
+
+```{r shootout_order_importance, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# calculate the probability of winning/losing the shootout depending on a goal or miss at each shootout order rank
+shootout_df %>%
+  left_join(
+    shootout_df %>%
+      group_by(match_id, team_id) %>%
+      summarise(
+        successes = sum(is_converted)
+      ) %>%
+      group_by(match_id) %>%
+      mutate(
+        is_shootout_winner = ifelse(successes == max(successes), 1, 0)
+      ) %>%
+      ungroup() %>%
+      select(-successes)
+  ) %>%
+  group_by(shootout_order, is_converted) %>%
+  summarise(
+    is_shootout_winner_avg = mean(is_shootout_winner)
+  ) %>%
+  ungroup() %>%
+  filter(shootout_order < 11) %>%
+  ggplot(., aes(as.factor(shootout_order), is_shootout_winner_avg, fill = as.factor(is_converted)))+
+  geom_bar(stat="identity", position = position_dodge(0.9))+
+  scale_fill_manual(values = c(colors_tfg$red, colors_tfg$blue))+
+  geom_text(aes(label = paste(round(is_shootout_winner_avg*100), "%")), vjust = -1, position = position_dodge(0.9), size = 3)+
+  scale_y_continuous(labels = scales::percent_format(1), limits = c(0.1, 0.8), oob = rescale_none)+
+  labs(x = "Shootout Penalty Order", y = "Probability of Winning Shootout", fill = "Penalty Scored")+
+  theme_tfg()
+
+
+# calculate the probability of winning/losing the shootout depending on a goal or miss at each shootout order rank by team
+shootout_df %>%
+  left_join(
+    shootout_df %>%
+      group_by(match_id, team_id) %>%
+      summarise(
+        successes = sum(is_converted)
+      ) %>%
+      group_by(match_id) %>%
+      mutate(
+        is_shootout_winner = ifelse(successes == max(successes), 1, 0)
+      ) %>%
+      ungroup() %>%
+      select(-successes)
+  ) %>%
+  group_by(team_shootout_order, is_converted) %>%
+  summarise(
+    is_shootout_winner_avg = mean(is_shootout_winner)
+  ) %>%
+  ungroup() %>%
+  filter(team_shootout_order < 6) %>%
+  ggplot(., aes(as.factor(team_shootout_order), is_shootout_winner_avg, fill = as.factor(is_converted)))+
+  geom_bar(stat="identity", position = position_dodge(0.9))+
+  scale_fill_manual(values = c(colors_tfg$red, colors_tfg$blue))+
+  geom_text(aes(label = paste(round(is_shootout_winner_avg*100), "%")), vjust = -1, position = position_dodge(0.9), size = 3)+
+  scale_y_continuous(labels = scales::percent_format(1), limits = c(0.15, 0.8), oob = rescale_none)+
+  labs(x = "Shootout Penalty Order (by Team)", y = "Probability of Winning Shootout", fill = "Penalty Scored")+
+  theme_tfg()
+
+```
+
+::: lgrey
+- This data shows three things:
+1. Going second in a shootout gives you a lower probability of winning 
+2. The first penalty is the most valuable to score of the first 3 (a goal increases chances of winning the shootout by 35% compared to a miss)
+3. The fifth penalty is the most valuable to score (of the first 5)
+:::
+
+<br> 
+
+## 3.3 - Penalty shootout simulations
+
+<br>
+
+### 3.3.1 - Accounting for player quality & penalty taken probability
+
+<br>
+
+```{r shootout_order_sims, message=FALSE, warning=FALSE, echo=TRUE, out.width = "100%"}
+
+# set seed for random samples
+set.seed(10)
+
+# take sample subset from penalty_conversion_by_player_adj df to create a random team of players
+random_team <-
+  penalty_conversion_by_player_adj %>%
+  sample_n(., 5) %>%
+  mutate(
+    team_id = 1,
+    player_team_rank = rank(desc(success_perc), ties.method = 'min')
+  ) %>%
+  select(team_id, player_id, player, success_perc, player_team_rank) %>%
+  arrange(player_team_rank)
+
+# display the randomly selected team of players
+random_team %>%
+  kbl(caption = "Random sample team from player rankings data") %>%
+  kable_styling()
+
+# create a df which contains all possible penalty taker orders
+all_orders <- 
+  expand.grid(
+    pen1 = seq(1, 5),
+    pen2 = seq(1, 5),
+    pen3 = seq(1, 5),
+    pen4 = seq(1, 5),
+    pen5 = seq(1, 5)
+  ) %>%
+  mutate(eg_id = 1:n()) %>%
+  pivot_longer(
+    cols = starts_with("pen"),
+    names_to = "team_shootout_order",
+    values_to = "player_team_rank"
+  ) %>%
+  mutate(
+    team_shootout_order = as.integer(gsub("pen", "", team_shootout_order))
+  ) %>%
+  group_by(eg_id) %>%
+  filter(length(unique(player_team_rank)) == 5) %>%
+  ungroup()
+
+# join team df with order df
+random_team_all_orders <- 
+  all_orders %>%
+  left_join(
+    all_orders %>%
+      distinct(eg_id) %>%
+      mutate(
+        sim_id = rank(eg_id)
+      )
+  ) %>%
+  select(-eg_id) %>%
+  left_join(
+    random_team
+  ) %>%
+  left_join(
+    shootout_df %>%
+      group_by(team_shootout_order) %>%
+      summarise(
+        trials = n(), # count total number of penalties
+      ) %>%
+      ungroup() %>%
+      mutate(
+        matches = shootout_matches*2,
+        taken_probability = trials/matches
+      ) %>%
+      select(team_shootout_order, taken_probability)
+  ) %>%
+  mutate(
+    penalty_scored = success_perc*taken_probability
+  )
+
+# calculate the total average penalties scored by each order group
+random_team_all_outcomes <- 
+  random_team_all_orders %>%
+  group_by(sim_id) %>%
+  mutate(
+    total_penalties_scored = sum(penalty_scored)
+  ) %>%
+  ungroup()  
+
+# display the optimised order of penalty takers by player rank
+random_team_all_outcomes %>%
+  filter(total_penalties_scored == max(total_penalties_scored)) %>%
+  select(team_shootout_order, player_team_rank) %>%
+  distinct() %>%
+  arrange(player_team_rank) %>%
+  pivot_wider(
+    names_from = team_shootout_order,
+    values_from = player_team_rank,
+    values_fn = list
+  ) %>%
+  rename(penalty1 = `1`, penalty2 = `2`, penalty3 = `3`, penalty4 = `4`, penalty5 = `5`) %>%
+  select(penalty1, penalty2, penalty3, penalty4, penalty5) %>%
+    kbl(caption = "Suggested order of player ranks in shootout") %>%
+  kable_styling()
+
+```
+
+::: lgrey
+- When only accounting for the probability of the penalty being taken, the data suggests that the best 3 players can interchange between penalties 1-3 and the worst player should go last
+- However, we have shown in the section above that despite the first 3 penalties having the same probability of being taken (100%) there are varying importance placed on each one. As a result I would suggest that the best player would take the first penalty
+:::
+
+<br> 
+
+### 3.3.2 - Accounting for player quality, penalty taken probability & penalty importance 
+
+<br>
+
+::: lblue
+With more time I would have liked to fully simulate out a penalty shootout, with random teams of varying quality. This would have accounted for the probability of every penalty being taken and also the impact of that penalty being scored in varying scenarios. As mentioned earlier, there remain a number of significant psychological factors which are difficult to account for using data
+:::
+
+
